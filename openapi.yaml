@@ -1,0 +1,532 @@
+openapi: 3.0.3
+info:
+  title: BerangkatPas API
+  version: 1.2.0
+  description: Departure-time recommendation service. Times include an ISO 8601 timezone offset. Search places only after an explicit user action, never as autocomplete.
+servers:
+  - url: /
+    description: Same host as Swagger UI
+  - url: https://berangkatpas.stei.site
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    BearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+    PartnerKey: { type: apiKey, in: header, name: X-API-Key }
+  schemas:
+    Point:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        label: { type: string, nullable: true, maxLength: 120, example: Institut Teknologi Bandung }
+    ScheduleInput:
+      type: object
+      required: [origin, destination, arrivalTime, mode]
+      description: Supply exactly one of date or weekdays. Weekdays use 0=Sunday through 6=Saturday.
+      properties:
+        title: { type: string, maxLength: 80, example: Kuliah pagi }
+        origin: { $ref: '#/components/schemas/Point' }
+        destination: { $ref: '#/components/schemas/Point' }
+        arrivalTime: { type: string, example: '08:00' }
+        date: { type: string, format: date }
+        weekdays: { type: array, items: { type: integer, minimum: 0, maximum: 6 } }
+        mode: { type: string, enum: [walk, motorcycle, car] }
+        preparationMinutes: { type: integer, minimum: 0, maximum: 120, default: 0, description: Minutes needed to get ready before departure }
+    Schedule:
+      allOf:
+        - { $ref: '#/components/schemas/ScheduleInput' }
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            active: { type: boolean }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    Recommendation:
+      type: object
+      properties:
+        id: { type: string, format: uuid, description: Present for a saved recommendation }
+        revision: { type: string, nullable: true, description: Changes when schedule, route, weather, or buffer changes }
+        scheduleId: { type: string, format: uuid }
+        occurrenceDate: { type: string, format: date }
+        arrivalAt: { type: string, format: date-time }
+        departAt: { type: string, format: date-time }
+        prepareAt: { type: string, format: date-time, description: Time to start preparing; equals departAt when preparationMinutes is zero }
+        preparationMinutes: { type: integer }
+        reminderEvents:
+          type: array
+          description: Equal-time events are combined. Schedule local notifications by reminderKey, event time, and revision.
+          items:
+            type: object
+            properties:
+              at: { type: string, format: date-time }
+              kinds: { type: array, items: { type: string, enum: [prepare, departure_soon, depart] } }
+        reasons:
+          type: object
+          properties:
+            routeMinutes: { type: integer }
+            weatherMinutes: { type: integer }
+            bufferMinutes: { type: number }
+        calibration:
+          type: object
+          nullable: true
+          properties:
+            currentBufferMinutes: { type: number }
+            feedbackCount: { type: integer }
+        navigationUrl: { type: string, format: uri, nullable: true, description: OpenStreetMap directions; motorcycle uses car routing }
+        routeMinutes: { type: integer }
+        weatherMinutes: { type: integer }
+        bufferMinutes: { type: number }
+        totalMinutes: { type: number }
+        rainProbability: { type: number, nullable: true }
+        mode: { type: string }
+        estimate: { type: string, nullable: true, description: Car-profile proxy marker for motorcycle }
+        source: { type: object, additionalProperties: true }
+    AuthResponse:
+      type: object
+      required: [user, token, refreshToken, expiresInSeconds]
+      example:
+        user: { id: 6228e87d-2765-46eb-96ea-55a3571b079b, email: demo@example.com }
+        token: <access-jwt>
+        refreshToken: <rotating-refresh-token>
+        expiresInSeconds: 900
+      properties:
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+        token: { type: string, description: JWT access token; send as Authorization Bearer token }
+        refreshToken: { type: string, description: Rotating opaque token; store securely on the device }
+        expiresInSeconds: { type: integer, example: 900 }
+    Place:
+      type: object
+      properties:
+        label: { type: string, example: Institut Teknologi Bandung, Bandung }
+        lat: { type: number, example: -6.8915 }
+        lng: { type: number, example: 107.6107 }
+        provider: { type: string, example: Nominatim }
+    Feedback:
+      type: object
+      properties:
+        arrivedAt: { type: string, format: date-time }
+        deltaMinutes: { type: number }
+        bufferAfter: { type: number }
+    HistoryItem:
+      allOf:
+        - { $ref: '#/components/schemas/Recommendation' }
+        - type: object
+          properties:
+            feedback:
+              nullable: true
+              allOf: [{ $ref: '#/components/schemas/Feedback' }]
+    PartnerPreviewInput:
+      type: object
+      required: [origin, destination, arrivalTime, date, mode]
+      description: One-time, stateless recommendation. No user account or saved schedule is needed.
+      example:
+        origin: { lat: -6.9, lng: 107.6 }
+        destination: { lat: -6.8915, lng: 107.6107 }
+        arrivalTime: '08:00'
+        date: '2026-11-25'
+        mode: motorcycle
+      properties:
+        origin: { $ref: '#/components/schemas/Point' }
+        destination: { $ref: '#/components/schemas/Point' }
+        arrivalTime: { type: string, example: '08:00' }
+        date: { type: string, format: date }
+        mode: { type: string, enum: [walk, motorcycle, car] }
+    PartnerPreview:
+      type: object
+      example:
+        arrivalAt: '2026-11-25T08:00:00+07:00'
+        departAt: '2026-11-25T07:35:00+07:00'
+        totalMinutes: 25
+        routeMinutes: 15
+        weatherMinutes: 0
+        bufferMinutes: 10
+        estimate: car_profile_proxy_for_motorcycle
+        sourceStatus: { route: available, weather: available }
+      properties:
+        arrivalAt: { type: string, format: date-time }
+        departAt: { type: string, format: date-time }
+        totalMinutes: { type: number }
+        routeMinutes: { type: integer }
+        weatherMinutes: { type: integer }
+        bufferMinutes: { type: number }
+        estimate: { type: string, nullable: true, description: Present when motorcycle uses a car route profile }
+        sourceStatus:
+          type: object
+          properties:
+            route: { type: string, enum: [available, stale] }
+            weather: { type: string, enum: [available, stale, unavailable] }
+    ManifestItem:
+      type: object
+      example:
+        reminderKey: 7d31ca10-896d-4b15-b89d-b8c0eaa0c0a1:2026-11-25
+        scheduleId: 7d31ca10-896d-4b15-b89d-b8c0eaa0c0a1
+        title: Kuliah pagi
+        origin: { label: Rumah, lat: -6.9, lng: 107.6 }
+        destination: { label: Kampus ITB, lat: -6.8915, lng: 107.6107 }
+        occurrenceDate: 2026-11-25
+        revision: 72888a2c0fafb51e5270
+        recommendation:
+          id: a5e18d2e-6465-42e0-bdf2-3e7c65518330
+          arrivalAt: 2026-11-25T08:00:00+07:00
+          departAt: 2026-11-25T07:35:00+07:00
+          routeMinutes: 15
+          weatherMinutes: 0
+          bufferMinutes: 10
+          totalMinutes: 25
+      properties:
+        reminderKey: { type: string, description: Stable key for cancelling/replacing a local notification }
+        scheduleId: { type: string, format: uuid }
+        title: { type: string }
+        origin: { $ref: '#/components/schemas/Point' }
+        destination: { $ref: '#/components/schemas/Point' }
+        occurrenceDate: { type: string, format: date }
+        revision: { type: string }
+        recommendation: { $ref: '#/components/schemas/Recommendation' }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Service and database healthy }
+  /api/openapi.yaml:
+    get:
+      summary: This OpenAPI contract
+      responses:
+        '200': { description: YAML contract }
+  /api/docs:
+    get:
+      summary: Interactive Swagger UI documentation
+      responses:
+        '200': { description: Swagger UI page (may redirect to /api/docs/) }
+  /api/v1/auth/register:
+    post:
+      summary: Register a test user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '201':
+          description: User, 15-minute access JWT, and 30-day rotating refresh token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '409': { description: Email already exists }
+  /api/v1/auth/login:
+    post:
+      summary: Obtain a JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: User and tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { description: Invalid credentials }
+  /api/v1/auth/me:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Current user
+      responses:
+        '200':
+          description: Current user identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/AuthResponse/properties/user' }
+        '401': { description: Missing or expired access token }
+  /api/v1/auth/refresh:
+    post:
+      summary: Rotate the refresh token and obtain a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New tokens; the previous refresh token is invalid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { description: Invalid, revoked, reused, or expired refresh token }
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '204': { description: Token revoked if active; client must delete its local tokens }
+  /api/v1/places/search:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Search Bandung places after explicit user submission
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 3, maxLength: 100 }, example: Institut Teknologi Bandung }
+      responses:
+        '200':
+          description: Matching places and OpenStreetMap attribution
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Place' } }
+                  attribution: { type: string }
+                  stale: { type: boolean }
+        '503': { description: Place provider unavailable and no usable cache }
+  /api/v1/places/reverse:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Find a Bandung place label for a user-selected coordinate
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number }, example: -6.8915 }
+        - { name: lng, in: query, required: true, schema: { type: number }, example: 107.6107 }
+      responses:
+        '200':
+          description: Nearest place and attribution
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  place: { $ref: '#/components/schemas/Place' }
+                  attribution: { type: string }
+                  stale: { type: boolean }
+        '400': { description: Coordinate outside Bandung pilot area }
+        '503': { description: Place provider unavailable and no usable cache }
+  /api/v1/schedules:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: List the user's schedules
+      responses:
+        '200':
+          description: Schedule list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
+    post:
+      security: [{ BearerAuth: [] }]
+      summary: Create a schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleInput' }
+      responses:
+        '201':
+          description: Created schedule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '400': { description: Invalid schedule }
+  /api/v1/schedules/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Read own schedule
+      responses:
+        '200':
+          description: Schedule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '404': { description: Not found }
+    put:
+      security: [{ BearerAuth: [] }]
+      summary: Replace own schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleInput' }
+      responses:
+        '200':
+          description: Updated schedule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+    delete:
+      security: [{ BearerAuth: [] }]
+      summary: Deactivate own schedule
+      responses:
+        '204': { description: Deactivated }
+  /api/v1/schedules/{id}/recommendation:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Calculate and save a recommendation for an occurrence
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Saved recommendation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Recommendation' }
+        '503': { description: Route unavailable }
+  /api/v1/schedules/{id}/mode-comparison:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Compare walk, motorcycle, and car for one occurrence without saving history
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Three options; each may contain a recommendation or an error if its route failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scheduleId: { type: string, format: uuid }
+                  occurrenceDate: { type: string, format: date }
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mode: { type: string, enum: [walk, motorcycle, car] }
+                        departAt: { type: string, format: date-time }
+                        totalMinutes: { type: number }
+                        navigationUrl: { type: string, format: uri }
+                        error:
+                          type: object
+                          properties:
+                            code: { type: string }
+                            message: { type: string }
+        '400': { description: Date is not an active occurrence }
+        '404': { description: Schedule does not belong to this user }
+  /api/v1/reminders/manifest:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Upcoming recommendations for local mobile notifications
+      description: Call on app launch/foreground and after schedule changes. Cancel notifications whose reminderKey disappeared; replace those whose revision changed. The backend does not push while the app is closed.
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 7, default: 7 } }
+      responses:
+        '200':
+          description: Upcoming departures and partial errors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  items: { type: array, items: { $ref: '#/components/schemas/ManifestItem' } }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        scheduleId: { type: string, format: uuid }
+                        occurrenceDate: { type: string, format: date }
+                        code: { type: string }
+  /api/v1/recommendations/preview:
+    post:
+      tags: [Partner API]
+      security: [{ PartnerKey: [] }]
+      summary: One-call departure estimate for partner groups
+      description: Send an X-API-Key and five fields. Uses the default 10-minute buffer and saves no history. Errors use error.code and error.message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartnerPreviewInput' }
+      responses:
+        '200':
+          description: Recommendation without personal history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerPreview' }
+        '400': { description: Invalid coordinates, date, arrival time, or mode; error.code is INVALID_SCHEDULE or INVALID_OCCURRENCE }
+        '401': { description: Missing or invalid API key }
+        '503': { description: Route provider unavailable and no usable cached estimate }
+  /api/v1/recommendations/{id}/feedback:
+    post:
+      security: [{ BearerAuth: [] }]
+      summary: Record actual arrival and recalibrate personal buffer
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [arrivedAt]
+              properties:
+                arrivedAt: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Feedback and new buffer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendationId: { type: string, format: uuid }
+                  arrivedAt: { type: string, format: date-time }
+                  deltaMinutes: { type: number }
+                  bufferBefore: { type: number }
+                  bufferAfter: { type: number }
+        '409': { description: Feedback already submitted }
+  /api/v1/history:
+    get:
+      security: [{ BearerAuth: [] }]
+      summary: Latest 100 recommendations and feedback entries
+      responses:
+        '200':
+          description: One visible recommendation per occurrence, preferring completed feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/HistoryItem' } }
