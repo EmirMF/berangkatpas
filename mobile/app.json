@@ -1,24 +1,44 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "BerangkatPas",
+    "slug": "berangkatpas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "scheme": "berangkatpas",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f4f8fd"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "id.ac.itb.berangkatpas"
     },
     "android": {
+      "package": "id.ac.itb.berangkatpas",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0272db",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "POST_NOTIFICATIONS"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-location",
+        { "locationWhenInUsePermission": "BerangkatPas memakai lokasimu untuk titik berangkat." }
+      ],
+      [
+        "expo-notifications",
+        { "icon": "./assets/android-icon-monochrome.png", "color": "#0272db" }
+      ]
+    ]
   }
 }
