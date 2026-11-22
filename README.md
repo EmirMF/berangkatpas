@@ -1,16 +1,26 @@
-# BerangkatPas backend
+# BerangkatPas Backend
 
-Microservice rekomendasi jam berangkat untuk kelompok K02. Backend memakai Express, SQLite, OSRM, Open-Meteo, dan Nominatim. Aplikasi mobile mengatur notifikasi perangkat berdasarkan manifest rekomendasi dari API. Integrasi dengan API dua kelompok lain akan dikerjakan setelah mitra dipilih.
+BerangkatPas menghitung kapan pengguna perlu berangkat agar tiba sesuai jadwal. Backend menerima jadwal sekali jalan atau berulang, mengambil estimasi rute dan prakiraan hujan, lalu menambahkan cadangan waktu pribadi yang dikalibrasi dari waktu tiba aktual. Aplikasi mobile memakai hasilnya untuk menampilkan rekomendasi dan menjadwalkan notifikasi lokal.
 
-Folder [`mobile/`](mobile/) disiapkan untuk kode aplikasi frontend. Backend saat ini berada di root repositori.
+**Status:** microservice dan pengujian lokal sudah berjalan. URL publik `https://berangkatpas.stei.site` adalah target deployment; ketersediaannya di STB belum dinyatakan terverifikasi. Integrasi dengan API dua kelompok lain masih menunggu kesepakatan endpoint. Kode frontend akan berada di [`mobile/`](mobile/).
 
 ## Arsitektur
 
-`mobile / mitra → Cloudflare Tunnel → Nginx → satu microservice Express → SQLite`. Lima modul bounded context di dalam microservice adalah **Identitas Pengguna**, **Jadwal dan Rutinitas**, **Perhitungan Keberangkatan**, **Riwayat dan Kalibrasi**, serta **Data Eksternal**. Modul berkomunikasi lewat fungsi layanan yang eksplisit dan hanya mengakses tabel miliknya sendiri. Konteks **Pengingat** berada di aplikasi mobile karena notifikasinya dijadwalkan pada perangkat. STB hanya menjalankan container `core`, `gateway`, dan `tunnel`; database berada di volume Docker dan tidak memiliki port publik.
+`Aplikasi mobile / mitra → Cloudflare Tunnel → Nginx gateway → satu microservice Express → SQLite`
 
-## Menjalankan lokal
+Satu microservice inti memiliki lima modul bounded context sesuai makalah kelompok:
 
-Syarat: Node.js 24+, npm. Salin `.env.example` menjadi `.env`, lalu ganti `JWT_SECRET` dengan nilai acak minimal 32 karakter. Jangan commit `.env`.
+- **Identitas Pengguna:** akun, JWT, refresh token, dan API key mitra.
+- **Jadwal dan Rutinitas:** jadwal, lokasi, moda, dan waktu persiapan.
+- **Perhitungan Keberangkatan:** rekomendasi, perbandingan moda, dan manifest pengingat.
+- **Riwayat dan Kalibrasi:** waktu tiba aktual dan cadangan pribadi.
+- **Data Eksternal:** adapter OSRM, Open-Meteo, dan Nominatim dengan timeout serta cache.
+
+Konteks **Pengingat** berada di aplikasi mobile; backend hanya mengirim waktu event dan revisinya. SQLite berada pada volume Docker. Gateway Nginx menerapkan batas 5 request/detik per alamat sumber. Konfigurasi Compose membatasi CPU dan memori setiap container. Stack utama: Node.js 24, Express 5, SQLite, Swagger UI/OpenAPI, Docker Compose, Nginx, dan Cloudflare Tunnel.
+
+## Menjalankan dan membaca kontrak secara lokal
+
+Syarat: Node.js 24+ dan npm. Salin `.env.example` menjadi `.env`, lalu isi `JWT_SECRET` unik minimal 32 karakter. Jangan commit `.env`.
 
 ```sh
 npm ci
@@ -18,45 +28,104 @@ npm test
 npm start
 ```
 
-Health check: `http://localhost:3000/api/health`. **Swagger UI:** `http://localhost:3000/api/docs`. Berkas kontrak OpenAPI: `http://localhost:3000/api/openapi.yaml`. Untuk Docker lokal, jalankan `docker compose up --build -d`, kemudian akses port gateway `http://localhost:8080/api/health` dan `http://localhost:8080/api/docs`. Setelah container sehat, jalankan `npm run smoke` untuk menguji alur nyata dengan akun uji acak pada gateway lokal.
+Dengan proses Node lokal, base URL adalah `http://localhost:3000`. Dengan Docker Compose, jalankan `docker compose up --build -d` dan gunakan `http://localhost:8080`. Health check ada di `/api/health`, Swagger UI di `/api/docs`, dan kontrak mentah di `/api/openapi.yaml` atau [`openapi.yaml`](openapi.yaml). Alur frontend dijelaskan di [`FRONTEND_HANDOFF.md`](FRONTEND_HANDOFF.md).
 
-## Kontrak dan contoh pemakaian
+## Daftar endpoint
 
-Seluruh endpoint, skema respons, dan autentikasi dijelaskan di [openapi.yaml](openapi.yaml) dan ditampilkan melalui Swagger UI di `/api/docs`. Alur implementasi lima layar aplikasi ada di [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md). Tombol **Authorize** menerima JWT untuk `BearerAuth` atau kunci mitra untuk `PartnerKey`; nilai rahasia tidak diisi otomatis. Respons error berbentuk `{"error":{"code":"...","message":"..."}}`. Semua waktu hasil memakai ISO 8601 dengan offset `+07:00`; hari berulang memakai `0=Ahad` hingga `6=Sabtu`.
+Semua path di bawah relatif terhadap base URL. Endpoint pengguna memakai header `Authorization: Bearer <access-token>`, kecuali register, login, refresh, dan logout.
 
-1. `POST /api/v1/auth/register` dengan `{"email":"demo@example.com","password":"password123"}` menghasilkan JWT akses 15 menit, refresh token 30 hari, dan `expiresInSeconds`. `POST /api/v1/auth/login` memakai body yang sama. `GET /api/v1/auth/me` membaca akun; `POST /api/v1/auth/refresh` menukar refresh token secara sekali pakai; `POST /api/v1/auth/logout` mencabutnya.
-2. Kirim `Authorization: Bearer <token>` ke `POST /api/v1/schedules` dengan body berikut:
+**Umum dan sesi pengguna**
 
-```json
-{
-  "origin": {"lat": -6.9000, "lng": 107.6000},
-  "destination": {"lat": -6.8900, "lng": 107.6100},
-  "arrivalTime": "08:00",
-  "preparationMinutes": 15,
-  "date": "2026-11-25",
-  "mode": "motorcycle"
-}
+- `GET /api/health` — status layanan dan database; tanpa autentikasi.
+- `GET /api/docs` dan `GET /api/openapi.yaml` — dokumentasi Swagger dan kontrak OpenAPI; tanpa autentikasi.
+- `POST /api/v1/auth/register` — membuat akun dan menerima access serta refresh token.
+- `POST /api/v1/auth/login` — masuk dan menerima token.
+- `GET /api/v1/auth/me` — membaca identitas akun dari JWT.
+- `POST /api/v1/auth/refresh` — menukar refresh token sekali pakai dengan pasangan token baru.
+- `POST /api/v1/auth/logout` — mencabut refresh token.
+
+**Lokasi, jadwal, dan rekomendasi pengguna**
+
+- `GET /api/v1/places/search?q=...` — mencari tempat setelah pengguna mengirim pencarian.
+- `GET /api/v1/places/reverse?lat=...&lng=...` — nama lokasi dari koordinat terpilih.
+- `GET /api/v1/schedules` dan `POST /api/v1/schedules` — daftar dan buat jadwal.
+- `GET /api/v1/schedules/:id`, `PUT /api/v1/schedules/:id`, `DELETE /api/v1/schedules/:id` — baca, ganti, atau nonaktifkan jadwal sendiri.
+- `GET /api/v1/schedules/:id/recommendation?date=YYYY-MM-DD` — hitung dan simpan rekomendasi untuk satu kejadian.
+- `GET /api/v1/schedules/:id/mode-comparison?date=YYYY-MM-DD` — bandingkan jalan kaki, motor, dan mobil tanpa menyimpan riwayat.
+- `GET /api/v1/reminders/manifest?days=7` — kejadian aktif, event notifikasi lokal, `reminderKey`, dan `revision`.
+- `POST /api/v1/recommendations/:id/feedback` — simpan waktu tiba aktual dan perbarui cadangan pribadi.
+- `GET /api/v1/history` — riwayat rekomendasi terbaru per kejadian beserta umpan balik.
+
+**API untuk kelompok lain**
+
+- `POST /api/v1/recommendations/preview` — satu endpoint perkiraan jam berangkat tanpa akun atau penyimpanan riwayat; memakai header `X-API-Key` per kelompok.
+
+## Cara mendapat akses
+
+Pengguna aplikasi dapat mendaftar lewat `POST /api/v1/auth/register`, lalu mengirim `token` sebagai Bearer JWT. Access token berlaku **15 menit**. Simpan `refreshToken` secara aman di perangkat; token ini berlaku **30 hari**, dirotasi ketika dipakai, dan dicabut saat logout. Semua endpoint jadwal, rekomendasi, lokasi, serta riwayat dibatasi ke akun pemiliknya.
+
+Kelompok mitra meminta **API key dan akun uji** kepada pengelola BerangkatPas melalui kanal koordinasi kelas atau issue repositori. Kunci diterbitkan satu per kelompok dan disampaikan lewat kanal privat, bukan dicantumkan di README atau aplikasi mobile. Di Swagger, tombol **Authorize** menerima Bearer JWT untuk endpoint pengguna dan `X-API-Key` untuk preview mitra. Akun uji bersama belum dipublikasikan.
+
+## Contoh request
+
+Contoh di bawah memakai base URL Docker lokal `http://localhost:8080`. Ganti dengan URL HTTPS setelah deployment publik tersedia. Nilai token dan API key hanya placeholder.
+
+**1. Daftar atau login**
+
+```http
+POST /api/v1/auth/register HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+
+{"email":"demo@example.com","password":"password123"}
 ```
 
-Untuk jadwal berulang, ganti `date` dengan `"weekdays":[1,2,3,4,5]`. Tambahkan `title` serta `label` di dalam `origin`/`destination` agar daftar jadwal terbaca manusia; format koordinat lama tetap diterima. Moda: `walk`, `motorcycle`, `car`. Endpoint `GET /api/v1/schedules`, `GET/PUT/DELETE /api/v1/schedules/:id` membaca, mengganti, atau menonaktifkan jadwal milik akun itu sendiri.
+Respons `201` memuat `user`, `token`, `refreshToken`, dan `expiresInSeconds: 900`. Login memakai body yang sama di `/api/v1/auth/login`. Untuk memperbarui sesi, kirim `{"refreshToken":"<refresh-token>"}` ke `/api/v1/auth/refresh` dan simpan kedua token baru.
 
-3. `GET /api/v1/schedules/:id/recommendation?date=2026-11-25` menghitung dan menyimpan rekomendasi. Respons menyertakan `id`, `arrivalAt`, `departAt`, `prepareAt`, `reminderEvents`, `reasons`, `calibration`, `navigationUrl`, rincian menit, `estimate`, dan `source`. `preparationMinutes` pada jadwal bernilai awal 0 dan menerima 0–120 menit; waktu bersiap tidak menggeser jam berangkat. `GET /api/v1/schedules/:id/mode-comparison?date=2026-11-25` membandingkan kaki, motor, dan mobil tanpa menyimpan riwayat. Opsi yang gagal memiliki `error` sendiri.
-4. `POST /api/v1/recommendations/:id/feedback` dengan `{"arrivedAt":"2026-11-25T08:06:00+07:00"}` mencatat realisasi dan mengubah cadangan pribadi. Satu rekomendasi hanya menerima satu umpan balik. `GET /api/v1/history` menampilkan 100 rekomendasi terakhir beserta umpan baliknya.
+**2. Buat jadwal sekali jalan**
 
-`GET /api/v1/places/search?q=...` mencari lokasi di area Bandung dan `GET /api/v1/places/reverse?lat=...&lng=...` memberi label pada koordinat GPS. Keduanya memerlukan JWT, mengembalikan atribusi OpenStreetMap, dan hanya dipanggil setelah tindakan eksplisit pengguna. Jangan memanggil Nominatim setiap ketikan atau untuk autocomplete. Hasil dicache tujuh hari dan permintaan ke penyedia diantre maksimal satu per detik. Base URL penyedia dapat diganti melalui `GEOCODING_BASE_URL` tanpa mengubah aplikasi mobile.
+```http
+POST /api/v1/schedules HTTP/1.1
+Host: localhost:8080
+Authorization: Bearer <access-token>
+Content-Type: application/json
 
-`GET /api/v1/reminders/manifest?days=7` mengembalikan rekomendasi keberangkatan mendatang beserta `reminderKey` stabil dan `revision`. `reminderEvents` memberi waktu mulai bersiap, 20 menit sebelum berangkat, dan saat berangkat; event pada waktu sama digabung. Aplikasi mengambil manifest saat dibuka, kembali aktif, atau jadwal diubah; notifikasi lokal yang kuncinya hilang dibatalkan dan yang revisinya berubah diganti. Dalam dua jam menjelang berangkat, sinkronisasi saat aplikasi aktif dapat memeriksa cuaca tiap 15 menit dan rute tiap satu jam. Kegagalan sebagian jadwal berada dalam `errors`, sehingga jadwal lain tetap diterima. Permintaan berulang dengan hasil sama memakai ID rekomendasi yang sama; riwayat menampilkan satu entri per kejadian.
+{"title":"Kuliah pagi","origin":{"label":"Rumah","lat":-6.9,"lng":107.6},"destination":{"label":"Kampus ITB","lat":-6.8915,"lng":107.6107},"arrivalTime":"08:00","date":"2026-11-25","mode":"motorcycle","preparationMinutes":15}
+```
 
-Untuk mitra, hanya ada **satu endpoint**: `POST /api/v1/recommendations/preview`. Kirim `X-API-Key` dan body berisi `origin`, `destination`, `arrivalTime`, `date`, `mode` seperti contoh di atas; abaikan `preparationMinutes` dan fitur akun. Respons ringkas berisi `arrivalAt`, `departAt`, `totalMinutes`, `routeMinutes`, `weatherMinutes`, `bufferMinutes`, `estimate`, dan `sourceStatus` (`available`, `stale`, atau `unavailable`). Preview tidak menyimpan perjalanan dan memakai cadangan bawaan 10 menit. Respons salah input `400`, kunci salah `401`, dan rute tak tersedia `503`, semuanya memakai `error.code` dan `error.message`. Tiap kelompok memiliki kunci sendiri. Jangan menaruh kunci pada aplikasi mobile.
+Respons `201` memuat `id` jadwal. Untuk jadwal berulang, ganti `date` dengan `"weekdays":[1,2,3,4,5]` (`0` = Minggu). `preparationMinutes` opsional, bernilai awal 0, dan menerima 0–120 menit.
 
-## Aturan perhitungan dan keterbatasan
+**3. Ambil rekomendasi**
 
-`departAt = arrivalAt - (routeMinutes + weatherMinutes + bufferMinutes)`. Perkiraan hujan ≥50% menambah 20% durasi untuk berjalan kaki, 15% untuk motor, dan 10% untuk mobil, dibulatkan ke atas. Persentase dan ambang dapat diubah melalui `.env`. Cadangan awal 10 menit; setelah umpan balik, cadangan berubah 25% dari selisih waktu tiba aktual dan target, maksimal 3 menit per perjalanan, dengan batas 0–30 menit.
+```http
+GET /api/v1/schedules/<schedule-id>/recommendation?date=2026-11-25 HTTP/1.1
+Host: localhost:8080
+Authorization: Bearer <access-token>
+```
 
-OSRM memakai profil kaki untuk berjalan dan profil mobil untuk mobil maupun motor. Estimasi motor ditandai `car_profile_proxy_for_motorcycle`, sehingga tidak dianggap rute motor yang akurat. `navigationUrl` membuka petunjuk arah OpenStreetMap dengan profil yang sesuai. Rute di-cache 24 jam, atau satu jam saat mendekati berangkat; jika penyedia gagal, data terakhir sampai 30 hari dapat dipakai dengan `source.route.stale=true`, atau API membalas `503`. Prakiraan cuaca di-cache 1 jam, atau 15 menit saat mendekati berangkat; saat tidak tersedia, tambahan hujan menjadi 0, `rainProbability=null`, dan `source.weather.unavailable=true`. Klien perlu menampilkan penanda keterbatasan ini.
+Respons `200` memuat `arrivalAt`, `departAt`, `prepareAt`, rincian `routeMinutes`, `weatherMinutes`, `bufferMinutes`, `reasons`, `calibration`, `reminderEvents`, `navigationUrl`, dan `source`. Semua waktu memakai ISO 8601 dengan offset `+07:00`. Jika perlu mencatat kedatangan, kirim `{"arrivedAt":"2026-11-25T08:06:00+07:00"}` ke `POST /api/v1/recommendations/<recommendation-id>/feedback`.
 
-Server demo OSRM membatasi pemakaian hingga satu permintaan per detik dan tidak menjamin uptime. Adapter ini mengantre permintaan rute berjarak minimal 1,1 detik serta memakai cache. Rute, cuaca, dan pencarian tempat memerlukan koneksi internet dari STB. Tampilkan atribusi OpenStreetMap/OSRM, Nominatim, dan Open-Meteo pada layar informasi aplikasi.
+**4. Preview sederhana untuk mitra**
+
+```http
+POST /api/v1/recommendations/preview HTTP/1.1
+Host: localhost:8080
+X-API-Key: <api-key-kelompok>
+Content-Type: application/json
+
+{"origin":{"lat":-6.9,"lng":107.6},"destination":{"lat":-6.8915,"lng":107.6107},"arrivalTime":"08:00","date":"2026-11-25","mode":"car"}
+```
+
+Respons `200` hanya berisi `arrivalAt`, `departAt`, `totalMinutes`, rincian menit rute/cuaca/cadangan, `estimate`, dan `sourceStatus`. Preview memakai cadangan bawaan 10 menit dan tidak membuat jadwal atau riwayat. Kesalahan selalu berbentuk `{"error":{"code":"...","message":"..."}}`; input salah menghasilkan `400`, autentikasi salah `401`, dan rute tidak tersedia `503`.
+
+## Aturan dan batasan
+
+`departAt = arrivalAt - (routeMinutes + weatherMinutes + bufferMinutes)`. Peluang hujan minimal 50% menambah 20% durasi berjalan kaki, 15% motor, atau 10% mobil, dibulatkan ke atas. Cadangan awal 10 menit; sesudah umpan balik, cadangan berubah sebesar 25% selisih waktu tiba aktual terhadap target, dibatasi 3 menit per perjalanan dan total 0–30 menit.
+
+Motor menggunakan profil rute mobil sebagai **perkiraan** (`estimate=car_profile_proxy_for_motorcycle`). OSRM tidak menyediakan lalu lintas langsung. Bila rute gagal, cache terakhir dapat dipakai dengan penanda `stale`, atau API mengembalikan `503`. Jika prakiraan cuaca tidak tersedia, tambahan hujan bernilai 0 dan `source.weather.unavailable=true`. Dalam dua jam menjelang berangkat, sinkronisasi aktif memeriksa cuaca paling sering tiap 15 menit dan rute tiap satu jam. Backend tidak mengirim push saat aplikasi tertutup; aplikasi mobile menjadwalkan notifikasi dari manifest dan menggantinya ketika `revision` berubah.
+
+Pencarian Nominatim dibatasi area percontohan Bandung dan dilakukan setelah tindakan pengguna, bukan autocomplete per ketikan. Tampilkan atribusi OpenStreetMap, OSRM, Nominatim, dan Open-Meteo di aplikasi.
 
 ## Pengujian
 
-Pengujian `npm test` mencakup migrasi, sesi login, lokasi, rekomendasi, manifest pengingat, kalibrasi, otorisasi, kegagalan penyedia data, dan alur API lengkap.
+`npm test` menjalankan tes domain, migrasi, autentikasi, kepemilikan data, penyedia eksternal, manifest, API mitra, dan kontrak OpenAPI. Pada pemeriksaan lokal terakhir, **18 tes lulus**; `docker compose config --quiet` juga valid. Deployment STB, URL publik, akun uji, dan integrasi dua API kelompok lain masih perlu diverifikasi saat tersedia.
