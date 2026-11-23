@@ -2,19 +2,20 @@ import { View, Pressable } from 'react-native';
 import Text from './Text';
 import Icon from './Icon';
 import { useStyles } from '../theme';
+import { modeTone, softShadow } from '../theme/effects';
 
 export default function Segmented({ options, value, onChange }) {
   const { c, s } = useStyles((c) => ({
     wrap: { flexDirection: 'row', gap: 4, padding: 4, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 24 },
     item: { flex: 1, height: 56, borderRadius: 20, alignItems: 'center', justifyContent: 'center', gap: 4 },
-    on: { backgroundColor: c.primary },
+    on: { backgroundColor: c.primary, ...softShadow, shadowColor: c.primary, shadowOpacity: 0.3 },
     text: { fontSize: 12, lineHeight: 16 },
   }));
   return (
     <View style={s.wrap} accessibilityRole="radiogroup">
       {options.map((o) => {
         const on = value === o.key;
-        const fg = on ? c.onPrimary : c.inkMuted;
+        const fg = on ? c.onPrimary : o.key === 'walk' || o.key === 'motorcycle' || o.key === 'car' ? modeTone(c, o.key).fg : c.inkMuted;
         return (
           <Pressable key={o.key} accessibilityRole="radio" accessibilityState={{ selected: on }} onPress={() => onChange(o.key)} style={[s.item, on && s.on]}>
             <Icon name={o.icon} size={24} color={fg} />

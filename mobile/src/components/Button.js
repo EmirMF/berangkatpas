@@ -2,6 +2,7 @@ import { Pressable } from 'react-native';
 import Text from './Text';
 import Icon from './Icon';
 import { useStyles } from '../theme';
+import { primaryShadow } from '../theme/effects';
 
 export default function Button({ title, onPress, variant = 'primary', icon, disabled = false, size = 'lg', testID }) {
   const { c, s } = useStyles((c) => ({
@@ -9,7 +10,7 @@ export default function Button({ title, onPress, variant = 'primary', icon, disa
     lg: { height: 56 },
     md: { height: 48 },
     sm: { height: 36, paddingHorizontal: 16 },
-    primary: { backgroundColor: c.primary },
+    primary: { backgroundColor: c.primary, ...primaryShadow },
     secondary: { backgroundColor: c.secondary },
     tint: { backgroundColor: c.primaryTint },
     danger: { backgroundColor: c.dangerTint },

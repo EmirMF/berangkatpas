@@ -7,7 +7,7 @@ import Button from './Button';
 import { api, friendlyMessage } from '../services/ApiService';
 import { useStyles } from '../theme';
 
-export default function PlacePicker({ label, value, onChange, error, allowGps, placeholder }) {
+export default function PlacePicker({ label, value, onChange, error, allowGps, placeholder, compact, tone = 'primary' }) {
   const [editing, setEditing] = useState(!value);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -18,6 +18,10 @@ export default function PlacePicker({ label, value, onChange, error, allowGps, p
   const { c, s } = useStyles((c) => ({
     wrap: { gap: 8 },
     label: { fontSize: 13, lineHeight: 20, fontWeight: '700' },
+    crow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+    tile: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    cap: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: c.inkMuted, letterSpacing: 0.5 },
+    ctext: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
     summary: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 20, paddingVertical: 8, paddingLeft: 20, paddingRight: 16 },
     summaryBody: { flex: 1, minWidth: 0 },
     summaryText: { fontSize: 14, lineHeight: 20, fontWeight: '600' },
@@ -95,9 +99,32 @@ export default function PlacePicker({ label, value, onChange, error, allowGps, p
     setEditing(false);
   };
 
+  const tileBg = tone === 'secondary' ? c.secondaryTint : c.primaryTint;
+  const tileFg = tone === 'secondary' ? c.secondaryText : c.primaryText;
+
+  if (compact && value && !editing) {
+    return (
+      <View>
+        <View style={s.crow}>
+          <View style={[s.tile, { backgroundColor: tileBg }]}>
+            <Icon name={allowGps ? 'my-location' : 'location-on'} size={20} color={tileFg} />
+          </View>
+          <View style={s.summaryBody}>
+            <Text style={s.cap}>{label}</Text>
+            <Text style={s.ctext} numberOfLines={2}>{value.label || `${value.lat}, ${value.lng}`}</Text>
+          </View>
+          <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setEditing(true)}>
+            <Text style={s.change}>Ubah</Text>
+          </Pressable>
+        </View>
+        {error ? <Text style={s.error}>{error}</Text> : null}
+      </View>
+    );
+  }
+
   return (
-    <View style={s.wrap}>
-      <Text style={s.label}>{label}</Text>
+    <View style={[s.wrap, compact && { paddingVertical: 12 }]}>
+      <Text style={compact ? s.cap : s.label}>{label}</Text>
       {value && !editing ? (
         <View style={s.summary}>
           <Icon name={allowGps ? 'my-location' : 'location-on'} size={20} color={c.primaryText} />
