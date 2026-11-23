@@ -117,3 +117,30 @@ export async function clearAllReminders() {
   }
   await writeStore({});
 }
+
+export async function scheduleArrivalPrompt(at, title) {
+  try {
+    const granted = await ensurePermission(false);
+    if (!granted) return null;
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Sudah sampai?',
+        body: `Buka BerangkatPas dan tekan "Sudah sampai" untuk ${title || 'perjalananmu'}.`,
+        data: { type: 'arrival-prompt' },
+        sound: true,
+      },
+      trigger: dateTrigger(at),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelNotification(id) {
+  if (!id) return;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+  } catch {
+    return;
+  }
+}

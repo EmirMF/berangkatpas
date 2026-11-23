@@ -71,7 +71,7 @@ export function buildSchedulePayload(values) {
 
 export function scheduleToForm(schedule) {
   return {
-    title: schedule.title || '',
+    title: schedule.title && schedule.title !== (schedule.destination && schedule.destination.label) ? schedule.title : '',
     origin: schedule.origin,
     destination: schedule.destination,
     arrivalTime: schedule.arrivalTime,
