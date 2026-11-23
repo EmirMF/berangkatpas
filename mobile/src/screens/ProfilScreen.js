@@ -1,16 +1,21 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, ScrollView, Linking, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Text from '../components/Text';
 import Icon from '../components/Icon';
 import Card from '../components/Card';
+import Wash from '../components/Wash';
 import Button from '../components/Button';
 import Banner from '../components/Banner';
 import ScreenHeader from '../components/ScreenHeader';
 import { useAuth } from '../context/AuthContext';
 import { api, friendlyMessage } from '../services/ApiService';
 import { syncReminders } from '../services/notificationSync';
+import { getProfile, initialOf } from '../services/profileStore';
 import { TAB_SPACE, useStyles } from '../theme';
+import { HERO_GRADIENT } from '../theme/effects';
 
 const CREDITS = [
   { icon: 'route', name: 'Rute: OSRM dan © OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' },
@@ -18,8 +23,15 @@ const CREDITS = [
   { icon: 'cloud-queue', name: 'Prakiraan cuaca: Open-Meteo', url: 'https://open-meteo.com' },
 ];
 
-export default function ProfilScreen() {
+export default function ProfilScreen({ navigation }) {
   const { user, logout } = useAuth();
+  const [displayName, setDisplayName] = useState('');
+  const userKey = user?.id || user?.email;
+  useFocusEffect(
+    useCallback(() => {
+      getProfile(userKey).then((p) => setDisplayName(p.name));
+    }, [userKey])
+  );
   const [syncing, setSyncing] = useState(false);
   const [note, setNote] = useState('');
   const [tone, setTone] = useState('ok');
@@ -28,7 +40,9 @@ export default function ProfilScreen() {
     screen: { flex: 1, backgroundColor: c.bg },
     content: { padding: 20, paddingTop: 32, paddingBottom: TAB_SPACE + 24, gap: 20 },
     account: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 16 },
-    avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: c.primaryTint, alignItems: 'center', justifyContent: 'center' },
+    avatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+    avatarText: { fontSize: 22, lineHeight: 28, fontWeight: '800', color: '#ffffff' },
+    edit: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.primaryTint, alignItems: 'center', justifyContent: 'center' },
     cap: { fontSize: 12, lineHeight: 16, color: c.inkMuted },
     email: { fontSize: 15, lineHeight: 24, fontWeight: '700' },
     block: { gap: 12 },
@@ -63,17 +77,22 @@ export default function ProfilScreen() {
 
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
+      <Wash />
       <ScrollView contentContainerStyle={s.content}>
         <ScreenHeader caption="Akunmu" title="Profil" />
 
         <Card style={s.account}>
-          <View style={s.avatar}>
-            <Icon name="person" size={28} color={c.primaryText} />
-          </View>
+          <LinearGradient colors={HERO_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.avatar}>
+            <Text style={s.avatarText}>{initialOf(displayName, user?.email)}</Text>
+          </LinearGradient>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={s.cap}>Akun</Text>
-            <Text style={s.email} numberOfLines={1}>{user?.email || '-'}</Text>
+            <Text style={s.cap}>{displayName ? 'Masuk sebagai' : 'Akun'}</Text>
+            <Text style={s.email} numberOfLines={1}>{displayName || user?.email || '-'}</Text>
+            {displayName ? <Text style={s.cap} numberOfLines={1}>{user?.email || '-'}</Text> : null}
           </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Ubah profil" onPress={() => navigation.navigate('EditProfil')} style={s.edit}>
+            <Icon name="edit" size={20} color={c.primaryText} />
+          </Pressable>
         </Card>
 
         <Card style={s.block}>
