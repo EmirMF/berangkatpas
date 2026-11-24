@@ -9,8 +9,13 @@ import Banner from '../components/Banner';
 import Ring from '../components/Ring';
 import ScreenHeader from '../components/ScreenHeader';
 import StateView from '../components/StateView';
+import HeroCard from '../components/HeroCard';
+import Wash from '../components/Wash';
+import { modeTone, hairline, softShadow } from '../theme/effects';
+import { shortTitle } from '../utils/label';
 import { api, friendlyMessage } from '../services/ApiService';
 import { syncReminders } from '../services/notificationSync';
+import { getTrip } from '../services/tripStore';
 import { clockOf, countdownLabel, formatDate, minutesLabel, minutesUntil } from '../utils/time';
 import { useStyles } from '../theme';
 
@@ -25,11 +30,15 @@ export default function DetailScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [trip, setTrip] = useState(null);
+  const locked = Boolean(trip && trip.scheduleId === scheduleId);
+  useEffect(() => {
+    getTrip().then(setTrip).catch(() => {});
+  }, []);
 
   const { c, s } = useStyles((c) => ({
     screen: { flex: 1, backgroundColor: c.bg },
     content: { padding: 20, paddingTop: 24, paddingBottom: 40, gap: 20 },
-    hero: { backgroundColor: c.primary, borderRadius: 28, padding: 24 },
     heroLabel: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: c.onPrimary },
     heroTime: { fontSize: 56, lineHeight: 64, fontWeight: '800', letterSpacing: -1.5, color: c.onPrimary },
     heroSub: { fontSize: 15, lineHeight: 24, fontWeight: '600', color: c.onPrimary },
@@ -43,11 +52,22 @@ export default function DetailScreen({ navigation, route }) {
     legendVal: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
     section: { fontSize: 16, lineHeight: 24, fontWeight: '700', marginBottom: 12 },
     body: { fontSize: 13, lineHeight: 20, color: c.inkMuted },
-    modeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 20 },
-    modeOn: { backgroundColor: c.primaryTint },
-    modeName: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600' },
-    modeVal: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-    modeMuted: { fontSize: 13, color: c.inkMuted },
+    heroTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    heroIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+    heroName: { fontSize: 16, lineHeight: 22, fontWeight: '800', color: c.onPrimary },
+    heroDate: { fontSize: 12, lineHeight: 16, fontWeight: '600', color: c.onPrimary, opacity: 0.85 },
+    rain: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: c.secondaryTint, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 14 },
+    rainTile: { width: 36, height: 36, borderRadius: 12, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center' },
+    rainText: { flex: 1, fontSize: 13, lineHeight: 19, fontWeight: '600', color: c.secondaryText },
+    modes: { flexDirection: 'row', gap: 10 },
+    modeCard: { flex: 1, minWidth: 0, backgroundColor: c.surface, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 12, borderWidth: 1, borderColor: hairline(c), gap: 4, ...softShadow },
+    modeOn: { borderColor: c.primary, borderWidth: 1.5 },
+    modeHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    modeTile: { width: 28, height: 28, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    modeName: { flex: 1, fontSize: 12, lineHeight: 16, fontWeight: '600', color: c.inkMuted },
+    modeVal: { fontSize: 17, lineHeight: 24, fontWeight: '800' },
+    modeSub: { fontSize: 11, lineHeight: 16, color: c.inkMuted },
+    modeMuted: { fontSize: 12, lineHeight: 16, color: c.inkMuted },
     attr: { fontSize: 12, lineHeight: 16, color: c.inkMuted },
     actions: { flexDirection: 'row', gap: 12 },
     flex: { flex: 1 },
@@ -120,24 +140,30 @@ export default function DetailScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
-      <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
-        <ScreenHeader
-          onBack={() => navigation.goBack()}
-          caption={rec ? formatDate(rec.occurrenceDate) : formatDate(date)}
-          title={title || 'Detail keberangkatan'}
-        />
+      <Wash height={260} />
+      <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+        <ScreenHeader onBack={() => navigation.goBack()} title="Detail jadwal" />
       </View>
       <StateView loading={loading} error={error} onRetry={load}>
         {rec ? (
           <ScrollView contentContainerStyle={s.content}>
-            <View style={s.hero}>
-              <Text style={s.heroLabel}>Berangkat pukul</Text>
+            <HeroCard padding={20}>
+              <View style={s.heroTop}>
+                <View style={s.heroIcon}>
+                  <Icon name={MODE_ICON[rec.mode] || 'schedule'} size={20} color={c.onPrimary} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={s.heroName} numberOfLines={1}>{shortTitle(title) || 'Perjalanan'}</Text>
+                  <Text style={s.heroDate}>{formatDate(rec.occurrenceDate)}</Text>
+                </View>
+              </View>
+              <Text style={[s.heroLabel, { marginTop: 14, opacity: 0.85 }]}>Berangkat pukul</Text>
               <Text style={s.heroTime}>{clockOf(rec.departAt)}</Text>
               <Text style={s.heroSub}>
                 {countdownLabel(minutesUntil(rec.departAt))}
                 {rec.preparationMinutes > 0 ? ` · bersiap ${rec.preparationMinutes} menit` : ''}
               </Text>
-            </View>
+            </HeroCard>
 
             {notes.map((n) => (
               <Banner key={n} tone="info" text={n} />
@@ -147,7 +173,7 @@ export default function DetailScreen({ navigation, route }) {
               <Text style={s.section}>Kenapa jam ini?</Text>
               <View style={s.ringRow}>
                 <Ring
-                  size={128}
+                  size={112}
                   stroke={14}
                   track={c.border}
                   segments={[
@@ -158,7 +184,7 @@ export default function DetailScreen({ navigation, route }) {
                 >
                   <View>
                     <Text style={s.ringNum}>{Math.round(rec.totalMinutes)}</Text>
-                    <Text style={s.ringUnit}>menit</Text>
+                    <Text style={s.ringUnit}>menit total</Text>
                   </View>
                 </Ring>
                 <View style={s.legend}>
@@ -177,7 +203,14 @@ export default function DetailScreen({ navigation, route }) {
               </View>
             </Card>
 
-            {rainNote ? <Banner text={rainNote} icon="umbrella" /> : null}
+            {rainNote ? (
+              <View style={s.rain}>
+                <View style={s.rainTile}>
+                  <Icon name="umbrella" size={20} color={c.secondaryText} />
+                </View>
+                <Text style={s.rainText}>{rainNote}</Text>
+              </View>
+            ) : null}
 
             {rec.calibration ? (
               <Card>
@@ -189,44 +222,54 @@ export default function DetailScreen({ navigation, route }) {
               </Card>
             ) : null}
 
-            <Card>
+            <View>
               <Text style={s.section}>Bandingkan moda</Text>
               {optionsError ? <Text style={s.body}>{optionsError}</Text> : null}
-              {options
-                ? options.map((o) => {
+              {options ? (
+                <View style={s.modes}>
+                  {options.map((o) => {
                     const on = o.mode === rec.mode;
+                    const tone = modeTone(c, o.mode);
                     return (
-                      <View key={o.mode} style={[s.modeRow, on && s.modeOn]}>
-                        <Icon name={MODE_ICON[o.mode]} size={24} color={on ? c.primaryText : c.inkMuted} />
-                        <Text style={s.modeName}>{MODE_LABEL[o.mode]}</Text>
+                      <View key={o.mode} style={[s.modeCard, on && s.modeOn]}>
+                        <View style={s.modeHead}>
+                          <View style={[s.modeTile, { backgroundColor: tone.bg }]}>
+                            <Icon name={MODE_ICON[o.mode]} size={16} color={tone.fg} />
+                          </View>
+                          <Text style={s.modeName} numberOfLines={1}>{MODE_LABEL[o.mode]}</Text>
+                        </View>
                         {o.error ? (
                           <Text style={s.modeMuted}>Tidak tersedia</Text>
                         ) : (
-                          <Text style={s.modeVal}>
-                            {clockOf(o.departAt)} · {minutesLabel(o.totalMinutes)}{o.estimate ? ' ~' : ''}
-                          </Text>
+                          <>
+                            <Text style={s.modeVal}>{minutesLabel(o.totalMinutes)}{o.estimate ? ' ~' : ''}</Text>
+                            <Text style={s.modeSub}>berangkat {clockOf(o.departAt)}</Text>
+                          </>
                         )}
                       </View>
                     );
-                  })
-                : null}
-            </Card>
+                  })}
+                </View>
+              ) : null}
+            </View>
 
             {rec.navigationUrl ? <Button title="Buka navigasi" icon="navigation" onPress={openNavigation} /> : null}
+
+            {locked ? <Banner tone="info" icon="info-outline" text="Perjalanan sedang berjalan. Selesaikan dulu untuk mengubah atau menghapus jadwal ini." /> : null}
 
             <View style={s.actions}>
               <View style={s.flex}>
                 <Button
                   title="Ubah"
                   icon="edit"
-                  variant="tint"
+                  variant="outline"
                   size="md"
-                  disabled={!schedule || busy}
+                  disabled={!schedule || busy || locked}
                   onPress={() => navigation.navigate('FormJadwal', { schedule })}
                 />
               </View>
               <View style={s.flex}>
-                <Button title="Hapus" icon="delete-outline" variant="danger" size="md" disabled={busy} onPress={remove} />
+                <Button title="Hapus" icon="delete-outline" variant="danger" size="md" disabled={busy || locked} onPress={remove} />
               </View>
             </View>
 

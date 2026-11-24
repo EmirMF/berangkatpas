@@ -7,8 +7,10 @@ import LoginScreen from '../screens/LoginScreen';
 import JadwalScreen from '../screens/JadwalScreen';
 import FormJadwalScreen from '../screens/FormJadwalScreen';
 import DetailScreen from '../screens/DetailScreen';
+import TibaScreen from '../screens/TibaScreen';
 import RiwayatScreen from '../screens/RiwayatScreen';
 import ProfilScreen from '../screens/ProfilScreen';
+import EditProfilScreen from '../screens/EditProfilScreen';
 import FloatingTabBar from './FloatingTabBar';
 import { useTheme } from '../theme';
 
@@ -50,6 +52,8 @@ export default function AppNavigator() {
             <Stack.Screen name="Tabs" component={Tabs} />
             <Stack.Screen name="FormJadwal" component={FormJadwalScreen} />
             <Stack.Screen name="Detail" component={DetailScreen} />
+            <Stack.Screen name="EditProfil" component={EditProfilScreen} />
+            <Stack.Screen name="Tiba" component={TibaScreen} options={{ gestureEnabled: false }} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

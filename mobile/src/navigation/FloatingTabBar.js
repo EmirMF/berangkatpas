@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Text from '../components/Text';
 import Icon from '../components/Icon';
 import { useTheme } from '../theme';
+import { floatShadow, hairline } from '../theme/effects';
 
 const ICONS = { Jadwal: 'calendar-month', Riwayat: 'history', Profil: 'person' };
 
@@ -23,8 +24,9 @@ export default function FloatingTabBar({ state, navigation }) {
         paddingHorizontal: 8,
         borderRadius: 28,
         borderWidth: 1,
-        borderColor: c.border,
+        borderColor: hairline(c),
         backgroundColor: c.surface,
+        ...floatShadow,
       }}
     >
       {state.routes.map((route, index) => {
@@ -41,7 +43,7 @@ export default function FloatingTabBar({ state, navigation }) {
             accessibilityState={{ selected: focused }}
             accessibilityLabel={route.name}
             onPress={onPress}
-            style={{ flex: 1, height: 56, alignItems: 'center', justifyContent: 'center', gap: 4 }}
+            style={{ flex: 1, height: 56, borderRadius: 20, alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: focused ? c.primaryTint : 'transparent' }}
           >
             <Icon name={ICONS[route.name]} size={24} color={color} />
             <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: focused ? '700' : '600', color }}>{route.name}</Text>

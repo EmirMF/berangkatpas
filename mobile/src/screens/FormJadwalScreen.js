@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, ScrollView, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Text from '../components/Text';
-import Icon from '../components/Icon';
 import Button from '../components/Button';
 import CustomInput from '../components/CustomInput';
 import Chip from '../components/Chip';
 import Banner from '../components/Banner';
+import Wash from '../components/Wash';
 import PlacePicker from '../components/PlacePicker';
 import Segmented from '../components/Segmented';
 import Stepper from '../components/Stepper';
@@ -14,9 +14,12 @@ import ScreenHeader from '../components/ScreenHeader';
 import useForm from '../hooks/useForm';
 import { api, friendlyMessage } from '../services/ApiService';
 import { syncReminders } from '../services/notificationSync';
+import { getProfile } from '../services/profileStore';
+import { useAuth } from '../context/AuthContext';
 import { buildSchedulePayload, scheduleToForm, validateSchedule } from '../utils/validators';
 import { DAY_SHORT, todayJakarta } from '../utils/time';
 import { useStyles } from '../theme';
+import { hairline, softShadow } from '../theme/effects';
 
 const MODES = [
   { key: 'walk', label: 'Jalan kaki', icon: 'directions-walk' },
@@ -39,6 +42,16 @@ export default function FormJadwalScreen({ navigation, route }) {
     error: { fontSize: 12, lineHeight: 16, color: c.danger },
     row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     days: { flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+    places: { backgroundColor: c.surface, borderRadius: 24, paddingHorizontal: 16, paddingVertical: 4, borderWidth: 1, borderColor: hairline(c), ...softShadow },
+    divider: { height: 1, backgroundColor: hairline(c) },
+    pair: { flexDirection: 'row', gap: 10 },
+    nameBox: { flex: 1, minWidth: 0, backgroundColor: c.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: hairline(c), ...softShadow },
+    timeCard: { width: 132, backgroundColor: c.primaryTint, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
+    cap: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: c.inkMuted, letterSpacing: 0.5 },
+    nameInput: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: c.ink, padding: 0, fontFamily: 'PlusJakartaSans_700Bold' },
+    timeInput2: { fontSize: 24, lineHeight: 30, color: c.primaryText, padding: 0, fontFamily: 'PlusJakartaSans_800ExtraBold' },
+    prepCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, backgroundColor: c.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: hairline(c), ...softShadow },
+    prepTitle: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
   }));
 
   const form = useForm(
@@ -58,6 +71,15 @@ export default function FormJadwalScreen({ navigation, route }) {
     validateSchedule
   );
   const { values, errors, setValue } = form;
+  const { user } = useAuth();
+  const userKey = user?.id || user?.email;
+  useEffect(() => {
+    if (editing) return;
+    getProfile(userKey).then((p) => {
+      setValue('mode', p.defaultMode);
+      setValue('preparationMinutes', String(p.defaultPrepMinutes));
+    });
+  }, [userKey]);
 
   const toggleDay = (d) => {
     const has = values.weekdays.includes(d);
@@ -102,40 +124,48 @@ export default function FormJadwalScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
+      <Wash height={240} />
       <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
         <ScreenHeader onBack={() => navigation.goBack()} title={editing ? 'Ubah jadwal' : 'Jadwal baru'} />
       </View>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         {serverError ? <Banner tone="danger" icon="error-outline" text={serverError} /> : null}
 
-        <PlacePicker label="Mau ke mana?" value={values.destination} onChange={(p) => setValue('destination', p)} error={errors.destination} />
-        <PlacePicker label="Berangkat dari" value={values.origin} onChange={(p) => setValue('origin', p)} error={errors.origin} allowGps />
+        <View style={s.places}>
+          <PlacePicker compact tone="primary" label="DARI" value={values.origin} onChange={(p) => setValue('origin', p)} error={errors.origin} allowGps />
+          <View style={s.divider} />
+          <PlacePicker compact tone="secondary" label="KE" value={values.destination} onChange={(p) => setValue('destination', p)} error={errors.destination} />
+        </View>
 
-        <CustomInput
-          label="Nama jadwal (opsional)"
-          placeholder="Kuliah pagi"
-          value={values.title}
-          onChangeText={form.handleChange('title')}
-          error={errors.title}
-        />
-
-        <View style={s.group}>
-          <Text style={s.label}>Harus tiba pukul (WIB)</Text>
-          <View style={s.timeBox}>
+        <View style={s.pair}>
+          <View style={s.nameBox}>
+            <Text style={s.cap}>NAMA</Text>
             <TextInput
-              style={s.timeInput}
+              style={s.nameInput}
+              value={values.title}
+              onChangeText={form.handleChange('title')}
+              placeholder="Opsional"
+              placeholderTextColor={c.inkMuted}
+              maxLength={80}
+              accessibilityLabel="Nama jadwal"
+            />
+          </View>
+          <View style={s.timeCard}>
+            <Text style={[s.cap, { color: c.primaryText }]}>TIBA PUKUL</Text>
+            <TextInput
+              style={s.timeInput2}
               value={values.arrivalTime}
               onChangeText={form.handleChange('arrivalTime')}
               placeholder="08:00"
               placeholderTextColor={c.inkMuted}
               keyboardType="numbers-and-punctuation"
               maxLength={5}
-              accessibilityLabel="Harus tiba pukul"
+              accessibilityLabel="Harus tiba pukul (WIB)"
             />
-            <Icon name="schedule" size={24} color={c.inkMuted} />
           </View>
-          {errors.arrivalTime ? <Text style={s.error}>{errors.arrivalTime}</Text> : null}
         </View>
+        {errors.title ? <Text style={s.error}>{errors.title}</Text> : null}
+        {errors.arrivalTime ? <Text style={s.error}>{errors.arrivalTime}</Text> : null}
 
         <View style={s.group}>
           <Text style={s.label}>Moda</Text>
@@ -145,17 +175,16 @@ export default function FormJadwalScreen({ navigation, route }) {
           ) : null}
         </View>
 
-        <View style={s.group}>
-          <Text style={s.label}>Ulangi</Text>
+        <View style={[s.group, { gap: 16 }]}>
           <View style={s.row}>
-            <Chip label="Berulang" selected={values.repeat === 'weekly'} onPress={() => setValue('repeat', 'weekly')} />
-            <Chip label="Sekali jalan" selected={values.repeat === 'once'} onPress={() => setValue('repeat', 'once')} />
+            <Chip soft label="Berulang" selected={values.repeat === 'weekly'} onPress={() => setValue('repeat', 'weekly')} />
+            <Chip soft label="Sekali jalan" selected={values.repeat === 'once'} onPress={() => setValue('repeat', 'once')} />
           </View>
           {values.repeat === 'weekly' ? (
             <>
               <View style={s.days}>
-                {DAY_SHORT.map((name, d) => (
-                  <Chip key={d} round label={name} selected={values.weekdays.includes(d)} onPress={() => toggleDay(d)} />
+                {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+                  <Chip key={d} round label={DAY_SHORT[d]} selected={values.weekdays.includes(d)} onPress={() => toggleDay(d)} />
                 ))}
               </View>
               {errors.weekdays ? <Text style={s.error}>{errors.weekdays}</Text> : null}
@@ -173,10 +202,15 @@ export default function FormJadwalScreen({ navigation, route }) {
           )}
         </View>
 
-        <View style={s.group}>
-          <Text style={s.label}>Waktu bersiap (0 sampai 120 menit)</Text>
-          <Stepper value={values.preparationMinutes} onChange={(v) => setValue('preparationMinutes', v)} />
-          {errors.preparationMinutes ? <Text style={s.error}>{errors.preparationMinutes}</Text> : null}
+        <View>
+          <View style={s.prepCard}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={s.prepTitle}>Waktu bersiap</Text>
+              <Text style={s.note}>Sebelum berangkat, 0 sampai 120 menit</Text>
+            </View>
+            <Stepper inline value={values.preparationMinutes} onChange={(v) => setValue('preparationMinutes', v)} />
+          </View>
+          {errors.preparationMinutes ? <Text style={[s.error, { marginTop: 8 }]}>{errors.preparationMinutes}</Text> : null}
         </View>
 
         <Button title={busy ? 'Menyimpan…' : 'Simpan'} onPress={save} disabled={busy} />
